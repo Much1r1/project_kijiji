@@ -26,6 +26,20 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
@@ -143,6 +157,11 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+.env.local
+.env.*.local
+*.pem
+*.key
+.env.development.local
 
 # Spyder project settings
 .spyderproject
@@ -205,3 +224,41 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# Model checkpoints & weights — too large for git, use DVC or cloud storage
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+ 
+# Rust build artifacts
+engine/target/
+engine/Cargo.lock
+ 
+# Node / dashboard
+dashboard/node_modules/
+dashboard/.next/
+dashboard/dist/
+dashboard/.env.local
+ 
+# Data — raw BGP dumps stay local, not in repo
+data/raw/
+data/dumps/
+*.mrt
+*.bz2
+*.gz
+ 
+# ClickHouse / DB local state
+*.db
+*.sqlite
+ 
+# OS noise
+.DS_Store
+Thumbs.db
+ 
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
