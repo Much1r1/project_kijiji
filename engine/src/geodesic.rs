@@ -93,8 +93,8 @@ mod tests {
         let nbo = Coord::new(-1.286, 36.817);
         let los = Coord::new(6.524, 3.379);
         let dist = haversine_km(nbo, los);
-        // Known approximate distance ~3961km
-        assert!((dist - 3961.0).abs() < 20.0, "got {dist:.1}km");
+        // Known approximate distance ~3811km (Haversine)
+        assert!((dist - 3811.0).abs() < 20.0, "got {dist:.1}km");
     }
 
     #[test]

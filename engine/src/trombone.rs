@@ -352,18 +352,21 @@ mod tests {
 
     #[test]
     fn moderate_detour_classified_policy() {
-        // Simulate a 1.6× detour (policy routing, not trombone)
-        // We do this by picking a hub that's slightly out of the way
+        // DAR → ACC via JNB: routes south to Johannesburg then west to Accra.
+        // Verified ratio: direct=4584km, via JNB=7127km → ratio=1.555
+        // Cleanly in POLICY band (1.4 < ratio ≤ 2.0).
         let event = make_event(
-            -1.286, 36.817,    // Nairobi
-            -6.792, 39.208,    // Dar es Salaam (close — ~840km direct)
-            Some(0.347), Some(32.582), Some("KLA"),  // Kampala as mild detour
-            32.0,
+            -6.792, 39.208,    // Dar es Salaam
+             5.603, -0.187,    // Accra
+            Some(-26.204), Some(28.047), Some("JNB"),  // Johannesburg detour
+            95.0,
         );
         let result = classify(&event, TROMBONE_THRESHOLD);
-        // Kampala is between NBO and DAR — ratio should be modest
+        assert!(result.detour_ratio > POLICY_THRESHOLD,
+            "expected > {POLICY_THRESHOLD}, got {}", result.detour_ratio);
         assert!(result.detour_ratio < TROMBONE_THRESHOLD,
-            "ratio={}", result.detour_ratio);
+            "expected < {TROMBONE_THRESHOLD}, got {}", result.detour_ratio);
+        assert_eq!(result.detour_class, "POLICY");
     }
 
     #[test]
@@ -393,3 +396,4 @@ mod tests {
         assert_eq!(result.detour_ratio, 1.0);
     }
 }
+// (test fix appended below original)
