@@ -1,13 +1,17 @@
-import { useState } from "react";
-import TopologyMap      from "./components/TopologyMap.jsx";
-import TrombonePanel    from "./components/TrombonePanel.jsx";
-import PeeringSimulator from "./components/PeeringSimulator.jsx";
-import FragilityRank    from "./components/FragilityRank.jsx";
-import "./App.css";
+// src/App.jsx  (updated — live BGP feed via useLiveBGP hook)
+import { useState } from "react"
+import TopologyMap      from "./components/TopologyMap.jsx"
+import TrombonePanel    from "./components/TrombonePanel.jsx"
+import PeeringSimulator from "./components/PeeringSimulator.jsx"
+import FragilityRank    from "./components/FragilityRank.jsx"
+import { useLiveBGP }   from "./hooks/useLiveBGP.js"
+import "./App.css"
 
 export default function App() {
-  const [activeProposal, setActiveProposal] = useState(null);
-  const [selectedNode,   setSelectedNode]   = useState(null);
+  const [activeProposal, setActiveProposal] = useState(null)
+  const [selectedNode,   setSelectedNode]   = useState(null)
+
+  const { events, trombones, stats, isLive, status } = useLiveBGP()
 
   return (
     <div className="app">
@@ -30,9 +34,20 @@ export default function App() {
             <span className="hs-val green">10</span>
           </div>
           <div className="header-stat">
-            <span className="hs-label">DETOURS</span>
-            <span className="hs-val red">LIVE</span>
+            <span className="hs-label">EVENTS</span>
+            <span className="hs-val green">{stats.total}</span>
           </div>
+          <div className="header-stat">
+            <span className="hs-label">DETOURS</span>
+            <span className="hs-val red">{stats.tromboneCount}</span>
+          </div>
+
+          {/* Live / Synthetic status pill */}
+          <div className={`live-badge ${isLive ? "live-badge--live" : "live-badge--synthetic"}`}>
+            <span className="live-dot" />
+            {isLive ? "LIVE · RIS" : status === "connecting" ? "CONNECTING" : "SYNTHETIC"}
+          </div>
+
           <div className="pulse-dot" />
         </div>
       </header>
@@ -41,8 +56,8 @@ export default function App() {
       <main className="app-grid">
         {/* Left column */}
         <div className="col-left">
-          <TrombonePanel />
-          <FragilityRank onNodeSelect={setSelectedNode} />
+          <TrombonePanel trombones={trombones} />
+          <FragilityRank onNodeSelect={setSelectedNode} liveEvents={events} />
         </div>
 
         {/* Centre — topology map */}
@@ -50,6 +65,7 @@ export default function App() {
           <TopologyMap
             activeProposal={activeProposal}
             onNodeClick={setSelectedNode}
+            liveEvents={events}
           />
           {selectedNode && (
             <div className="node-detail">
@@ -75,9 +91,9 @@ export default function App() {
       {/* ── Footer ── */}
       <footer className="app-footer">
         <span>KIJIJI · SDG 9.4 Research Platform · DAAD 2025</span>
-        <span>Data: RIPE RIS · PeeringDB · World Bank</span>
+        <span>Data: {isLive ? "RIPE RIS Live · PeeringDB · World Bank" : "Synthetic · RIPE RIS topology"}</span>
         <span>Model: GraphSAGE · PyTorch Geometric</span>
       </footer>
     </div>
-  );
+  )
 }
