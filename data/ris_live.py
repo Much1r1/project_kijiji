@@ -287,12 +287,7 @@ def process_bgp_update(msg_data: dict) -> Optional[dict]:
 
 
 # ── WebSocket connection + subscription ───────────────────────────────────────
-
 def build_subscriptions() -> list[dict]:
-    """
-    Build RIS Live subscription messages.
-    We subscribe per-collector and filter by African ASNs in the path.
-    """
     subs = []
     for collector in COLLECTORS:
         # Subscribe to all messages touching any of our tracked ASNs
