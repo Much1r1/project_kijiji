@@ -449,7 +449,7 @@ def baseline_comparison(
     # Recover predicted detour stats from model scores
     model.eval()
     with torch.no_grad():
-        pos_scores, neg_scores = model(test_data)
+        pos_scores, neg_scores, neg_edge_index = model(test_data)
         # Scores > threshold = model predicts high-value peering (low detour)
         threshold    = float(pos_scores.mean())
         predicted_good = (pos_scores > threshold).float().mean().item()
