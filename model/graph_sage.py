@@ -56,8 +56,8 @@ FEAT_IXP        = 2   # IXP count (normalised)
 FEAT_LATENCY    = 3   # Mean latency ms (normalised)
 
 IN_FEATURES     = 4
-HIDDEN_DIM      = 64
-OUT_DIM         = 32
+HIDDEN_DIM      = 32
+OUT_DIM         = 16
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -85,8 +85,12 @@ AFRICAN_NODES: list[CityNode] = [
     CityNode("KIN", "Kinshasa",       "CD",  577.0, 0.18, 0, 89.0),
     CityNode("CMN", "Casablanca",     "MA", 3795.0, 0.67, 1, 18.0),
     CityNode("KLA", "Kampala",        "UG",  883.0, 0.33, 1, 55.0),
+    CityNode("ABJ", "Abidjan",      "CI", 1750.0, 0.49, 1, 48.0),
+    CityNode("DKR", "Dakar",        "SN", 1430.0, 0.42, 1, 55.0),
+    CityNode("CTN", "Conakry",      "GN",  510.0, 0.18, 0, 98.0),
+    CityNode("HAR", "Harare",       "ZW", 1200.0, 0.39, 0, 72.0),
+    CityNode("MPS", "Maputo",       "MZ",  490.0, 0.22, 0, 88.0),
 ]
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # FEATURE NORMALISATION
@@ -203,7 +207,7 @@ class KijijiEncoderManual(nn.Module):
         in_features: int = IN_FEATURES,
         hidden_dim:  int = HIDDEN_DIM,
         out_dim:     int = OUT_DIM,
-        dropout:     float = 0.3,
+        dropout:     float = 0.5,
     ):
         super().__init__()
         self.conv1   = ManualSAGEConv(in_features, hidden_dim)
@@ -243,13 +247,13 @@ class KijijiEncoder(nn.Module):
         in_features: int = IN_FEATURES,
         hidden_dim:  int = HIDDEN_DIM,
         out_dim:     int = OUT_DIM,
-        dropout:     float = 0.3,
+        dropout:     float = 0.5,
     ):
         super().__init__()
         self.conv1   = SAGEConv(in_features, hidden_dim)
         self.conv2   = SAGEConv(hidden_dim,  out_dim)
         self.dropout = nn.Dropout(p=dropout)
-        self.bn1     = nn.BatchNorm1d(hidden_dim)
+        self.bn1     = nn.LayerNorm(hidden_dim)  # LayerNorm stable on small graphs
 
     def forward(self, x: Tensor, edge_index: Tensor) -> Tensor:
         z = self.conv1(x, edge_index)
@@ -418,20 +422,31 @@ def weighted_latency_loss(
     gdp_weights:    Tensor,
     pos_edge_index: Tensor,
     neg_edge_index: Tensor,
-    margin:         float = 0.5,
 ) -> Tensor:
     """
-    Per-edge inverse-GDP weighted margin + BCE loss.
+    Per-edge inverse-GDP weighted binary cross-entropy loss.
 
-    Adds a hinge margin term: pos_score should exceed neg_score by at
-    least `margin`. This directly optimises separation, which pure BCE
-    doesn't enforce strongly enough on small dense graphs.
+    Each edge (u, v) carries weight = max(gdp_weight[u], gdp_weight[v]).
+    This weights errors on routes involving the most fragile cities highest.
+
+    Args:
+        pos_scores:     [E_pos] scores for existing edges (want: high)
+        neg_scores:     [E_neg] scores for sampled negative edges (want: low)
+        gdp_weights:    [N] per-node inverse-GDP weight in [0, 1]
+        pos_edge_index: [2, E_pos] positive edge indices
+        neg_edge_index: [2, E_neg] negative edge indices
+
+    Returns:
+        Scalar weighted loss tensor.
     """
-    # ── BCE component ──
     pos_labels = torch.ones_like(pos_scores)
     neg_labels = torch.zeros_like(neg_scores)
+
     scores = torch.cat([pos_scores, neg_scores])
     labels = torch.cat([pos_labels, neg_labels])
+
+    # Clamp before sigmoid to prevent overflow → nan on small graphs
+    scores = scores.clamp(-10, 10)
     scores_norm = torch.sigmoid(scores).clamp(1e-7, 1 - 1e-7)
     bce = -(labels * torch.log(scores_norm) + (1 - labels) * torch.log(1 - scores_norm))
 
@@ -439,20 +454,17 @@ def weighted_latency_loss(
     pos_w = torch.max(
         gdp_weights[pos_edge_index[0]],
         gdp_weights[pos_edge_index[1]],
-    )
+    )  # [E_pos]
     neg_w = torch.ones_like(neg_scores)
     weights = torch.cat([pos_w, neg_w])
     bce_loss = (bce * weights).mean()
 
-    # ── Margin component ──
-    # For each positive/negative pair, enforce pos > neg + margin
-    # Truncate to same length for pairwise comparison
+    # ── Margin loss: enforce pos > neg + 0.5 ──
     n = min(pos_scores.size(0), neg_scores.size(0))
-    margin_loss = F.relu(margin - pos_scores[:n] + neg_scores[:n])
-    # Weight margin loss by GDP of positive edge endpoints
+    margin_loss = F.relu(0.5 - pos_scores[:n] + neg_scores[:n])
     margin_loss = (margin_loss * pos_w[:n]).mean()
 
-    return bce_loss + 0.3 * margin_loss
+    return bce_loss + 0.1 * margin_loss
 
 
 def get_gdp_weights(data: Data) -> Tensor:
@@ -478,6 +490,9 @@ _COORDS: dict[str, tuple[float, float]] = {
     "ACC": ( 5.603,  -0.187), "DAR": (-6.792,   39.208),
     "ADD": ( 9.145,  40.489), "KIN": (-4.322,   15.322),
     "CMN": (33.589,  -7.604), "KLA": ( 0.347,   32.582),
+    "ABJ": ( 5.359,  -4.008), "DKR": (14.693, -17.447),
+    "CTN": ( 9.537, -13.677), "HAR": (-17.829, 31.052),
+    "MPS": (-25.966, 32.573),
 }
 
 
@@ -543,6 +558,7 @@ def train_epoch(
         data.edge_index, neg_edge_index,   # pass edge indices for per-edge weighting
     )
     loss.backward()
+    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
     optimizer.step()
     return float(loss.detach())
 
