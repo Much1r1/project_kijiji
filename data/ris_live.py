@@ -289,17 +289,23 @@ def process_bgp_update(msg_data: dict) -> Optional[dict]:
 # ── WebSocket connection + subscription ───────────────────────────────────────
 def build_subscriptions() -> list[dict]:
     subs = []
+    # Subscribe to African IP prefix ranges — much higher volume
+    african_prefixes = [
+        "41.0.0.0/8",    # AFRINIC block
+        "102.0.0.0/8",   # AFRINIC block  
+        "105.0.0.0/8",   # AFRINIC block
+        "196.0.0.0/8",   # legacy African
+        "197.0.0.0/8",   # AFRINIC block
+    ]
     for collector in COLLECTORS:
-        # Subscribe to all messages touching any of our tracked ASNs
-        # RIS Live supports 'path' filter: match ASN anywhere in AS path
-        for asn in list(TRACKED_ASNS)[:20]:  # RIS Live recommends batching
+        for prefix in african_prefixes:
             subs.append({
                 "type": "ris_subscribe",
                 "data": {
-                    "host":    collector,
-                    "path":    str(asn),
-                    "type":    "UPDATE",
-                    "require": "announcements",
+                    "host":   collector,
+                    "prefix": prefix,
+                    "type":   "UPDATE",
+                    "moreSpecific": True,
                 },
             })
     return subs
@@ -314,9 +320,19 @@ async def run_ris_stream(session: aiohttp.ClientSession):
     buffer_size = 20   # batch size for Tinybird ingest
     flush_every = 30   # also flush every N seconds regardless
 
+    events_file = os.path.join(
+        os.path.dirname(__file__), "bgp_events.ndjson"
+    )
+
     async def flush():
         if buffer:
             await post_to_tinybird(session, "bgp_events", buffer.copy())
+            with open(events_file, "a", encoding="utf-8") as f:
+                for row in buffer:
+                    f.write(json.dumps(row) + "\n")
+            log.info("Flushed %d events to disk (total file: %d bytes)",
+                     len(buffer),
+                     os.path.getsize(events_file))
             buffer.clear()
 
     log.info("Connecting to RIS Live: %s", RIS_WS_URL)
